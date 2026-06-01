@@ -260,7 +260,7 @@
             <div id="track-count" class="text-2xl font-semibold">0</div>
           </div>
           <div>
-            <div class="text-zinc-500 text-xs tracking-widest mb-1">TOTAL TIME</div>
+            <div class="text-zinc-500 text-xs tracking-widest mb-1">LP DURATION</div>
             <div id="total-duration" class="text-2xl font-semibold">—</div>
           </div>
           <div>
@@ -865,20 +865,8 @@
     function updateStats() {
       document.getElementById('track-count').textContent = tracks.length;
 
-      let totalSeconds = 0;
-      tracks.forEach(t => {
-        if (t.duration) {
-          const parts = t.duration.split(':');
-          if (parts.length === 2) {
-            totalSeconds += parseInt(parts[0]) * 60 + parseInt(parts[1]);
-          }
-        }
-      });
-
-      const mins = Math.floor(totalSeconds / 60);
-      const secs = totalSeconds % 60;
-      document.getElementById('total-duration').textContent = 
-        tracks.length > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : '—';
+      // Use the shared LP duration calculator
+      document.getElementById('total-duration').textContent = formatTotalDuration();
 
       // === Album Progress Calculation ===
       if (tracks.length === 0) {
@@ -971,6 +959,28 @@
       const min = Math.floor(seconds / 60);
       const sec = Math.floor(seconds % 60);
       return `${min}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    // LP duration helpers (sums all track durations for total album length)
+    function getTotalDurationSeconds() {
+      let totalSeconds = 0;
+      tracks.forEach(t => {
+        if (t.duration) {
+          const parts = t.duration.split(':');
+          if (parts.length === 2) {
+            totalSeconds += parseInt(parts[0]) * 60 + parseInt(parts[1]);
+          }
+        }
+      });
+      return totalSeconds;
+    }
+
+    function formatTotalDuration() {
+      const totalSeconds = getTotalDurationSeconds();
+      if (totalSeconds === 0) return '—';
+      const mins = Math.floor(totalSeconds / 60);
+      const secs = totalSeconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
     // Edit track
@@ -1658,7 +1668,7 @@
 
       const mb = (totalBytes / 1024 / 1024).toFixed(1);
       el.textContent = `${mb} MB`;
-      el.title = `Estimated ${mb} MB used (localStorage + known audio)`;
+      el.title = `Estimated ${mb} MB used (localStorage + known audio)";
     }
 
     async function exportAsZip() {
@@ -1697,8 +1707,14 @@
       let meta = `AlbumOrg Export — ${dateStr}\n`;
       meta += `Artist: Sore Heart Soar\n`;
       meta += `Title: ${albumInfo.title || 'AlbumOrg'}\n`;
-      meta += `Subtitle: ${albumInfo.subtitle || ''}\n\n`;
-      meta += `${tracks.length} tracks in order:\n\n`;
+      meta += `Subtitle: ${albumInfo.subtitle || ''}\n`;
+
+      // Include total LP duration in the export summary
+      const totalLP = formatTotalDuration();
+      if (totalLP !== '—') {
+        meta += `Total LP Duration: ${totalLP}\n`;
+      }
+      meta += `\n${tracks.length} tracks in order:\n\n`;
 
       tracks.forEach((track, i) => {
         const num = String(i + 1).padStart(2, '0');
