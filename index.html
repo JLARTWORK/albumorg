@@ -997,6 +997,29 @@
         const hasAudio = track.audioData || track.hasPersistedAudio;
         reuploadSection.classList.toggle('hidden', !!hasAudio);
       }
+
+      document.getElementById('edit-modal').classList.remove('hidden');
+      document.getElementById('edit-modal').classList.add('flex');
+    }
+
+    // Mood selection was replaced with free-text "mood" + "bpm" fields
+
+    function saveTrackEdits() {
+      const track = tracks.find(t => t.id === currentEditId);
+      if (!track) return;
+
+      track.title = document.getElementById('modal-title').value.trim();
+      track.notes = document.getElementById('modal-notes').value.trim();
+
+      // New fields
+      track.mood = document.getElementById('modal-mood').value.trim() || null;
+      const bpmValue = document.getElementById('modal-bpm').value.trim();
+      track.bpm = bpmValue ? parseInt(bpmValue, 10) : null;
+      track.status = document.getElementById('modal-status').value || 'idea';
+
+      saveData();
+      hideEditModal();
+      renderTracklist();
     }
 
     function hideEditModal() {
