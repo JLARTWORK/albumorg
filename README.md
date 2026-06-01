@@ -19,7 +19,7 @@ Upload tracks, reorder them, add notes/moods/BPM/status, preview the whole thing
 - 🖼️ Clickable album artwork (swap anytime)
 - ▶️ "Play Album" full sequential preview mode with progress
 - 📤 Export ordered track list as clean text
-- 💾 Metadata auto-saved to localStorage (audio stays in-memory for session)
+- 💾 **Full persistence** — tracks + audio survive page refresh (uses IndexedDB + localStorage)
 - 🌓 Dark-first design with subtle gold accents and kintsugi glow
 - 📱 Fully responsive
 
@@ -29,9 +29,9 @@ Upload tracks, reorder them, add notes/moods/BPM/status, preview the whole thing
 2. **Edit details** — click any track to open the editor (title, mood, BPM, notes, status)
 3. **Reorder** — drag the grip handle on the left
 4. **Play** — use the bottom global player or "Play Album" for the full experience
-5. **Persist** — close the tab and come back; your track order and metadata return (re-upload audio after refresh)
+5. **Persist** — close the tab and come back; your track order, metadata, **and audio files** now survive refreshes (stored in IndexedDB + localStorage).
 
-> **Note:** Audio blobs are intentionally not persisted to localStorage (they would be huge). Your data survives refreshes.
+Audio is persisted using IndexedDB (much higher capacity than localStorage). Your full album stays available after refresh or browser restart.
 
 ## Editable Header
 
@@ -44,7 +44,7 @@ Click the pencil icon ✎ next to the album title to change the main title and s
 - Font Awesome 6 icons
 - SortableJS (drag & drop)
 - Wavesurfer.js v7 (waveforms + playback)
-- Pure client-side JavaScript + localStorage
+- Pure client-side JavaScript + localStorage + IndexedDB (for audio)
 
 ## Deploying to Netlify (Recommended)
 
@@ -86,7 +86,7 @@ python3 -m http.server 8000
 - **Export List** — copies the current ordered track list as a clean .txt
 - **Reset** — nuclear option (clears everything)
 
-For full backups of metadata, the data lives in `localStorage` under the key `albumorg-v1` (tracks) and `albumorg-info-v1` (title/subtitle).
+For full backups, track metadata lives in `localStorage` (`albumorg-v1` + `albumorg-info-v1`). Audio lives in IndexedDB (database name `albumorg-audio`). Use Export List + re-upload audio when moving to another device/browser.
 
 ## License
 
