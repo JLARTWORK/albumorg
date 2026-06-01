@@ -19,7 +19,9 @@ Upload tracks, reorder them, add notes/moods/BPM/status, preview the whole thing
 - 🖼️ Clickable album artwork (swap anytime)
 - ▶️ "Play Album" full sequential preview mode with progress
 - 📤 Export ordered track list as clean text
-- 💾 **Full persistence** — tracks + audio survive page refresh (uses IndexedDB + localStorage)
+- 📦 **Export full album as ZIP** (all audio files + metadata + cover art) — advanced client-side feature using JSZip
+- 📊 Visible "Storage used" indicator (real-time estimate of IndexedDB + localStorage usage)
+- 💾 Full persistence — audio + metadata survive refresh (uses IndexedDB + localStorage)
 - 🌓 Dark-first design with subtle gold accents and kintsugi glow
 - 📱 Fully responsive
 
@@ -37,6 +39,19 @@ Audio is persisted using IndexedDB (much higher capacity than localStorage). You
 
 Click the pencil icon ✎ next to the album title to change the main title and subtitle line. Changes are saved in your browser.
 
+## Storage Indicator
+
+A live "STORAGE" value is shown in the hero section. It uses the modern `navigator.storage.estimate()` API when available for accurate usage, with a fallback calculation.
+
+## Export as ZIP
+
+The "Export ZIP" button (next to Export List) creates a complete portable archive containing:
+- All audio files in numbered order (with safe filenames)
+- A README.txt with full metadata, BPM, notes, and status
+- The custom album cover (if you changed it)
+
+Great for backups or moving your project to another device.
+
 ## Tech Stack
 
 - Single-file vanilla HTML (no build step)
@@ -44,6 +59,7 @@ Click the pencil icon ✎ next to the album title to change the main title and s
 - Font Awesome 6 icons
 - SortableJS (drag & drop)
 - Wavesurfer.js v7 (waveforms + playback)
+- JSZip (for ZIP export, loaded from CDN)
 - Pure client-side JavaScript + localStorage + IndexedDB (for audio)
 
 ## Deploying to Netlify (Recommended)
@@ -84,9 +100,10 @@ python3 -m http.server 8000
 ## Data Portability
 
 - **Export List** — copies the current ordered track list as a clean .txt
+- **Export ZIP** — full self-contained backup
 - **Reset** — nuclear option (clears everything)
 
-For full backups, track metadata lives in `localStorage` (`albumorg-v1` + `albumorg-info-v1`). Audio lives in IndexedDB (database name `albumorg-audio`). Use Export List + re-upload audio when moving to another device/browser.
+For full backups, track metadata lives in `localStorage` (`albumorg-v1` + `albumorg-info-v1`). Audio lives in IndexedDB (database name `albumorg-audio`). Use Export ZIP for the easiest complete backup.
 
 ## License
 
@@ -103,3 +120,4 @@ Built with intention by Sore Heart Soar.
 - Icons: Font Awesome
 - Waveforms: Wavesurfer.js
 - Fonts: Inter & Space Grotesk (Google Fonts via CDN)
+- ZIP support: JSZip
