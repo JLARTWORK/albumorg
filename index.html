@@ -1644,7 +1644,7 @@
             const mb = (totalBytes / 1024 / 1024).toFixed(1);
             const quotaMb = estimate.quota ? (estimate.quota / 1024 / 1024).toFixed(0) : '?';
             el.textContent = `${mb} MB`;
-            el.title = `Using ~${mb} MB of available storage (quota ~${quotaMb} MB)`;
+            el.title = `Using ~${mb} MB of available storage (quota ~${quotaMb} MB)";
             return;
           }
         } catch (e) {}
@@ -1668,7 +1668,7 @@
 
       const mb = (totalBytes / 1024 / 1024).toFixed(1);
       el.textContent = `${mb} MB`;
-      el.title = `Estimated ${mb} MB used (localStorage + known audio)";
+      el.title = `Estimated ${mb} MB used (localStorage + known audio)`;
     }
 
     async function exportAsZip() {
