@@ -21,6 +21,7 @@ Upload tracks, reorder them, add notes/moods/BPM/status, preview the whole thing
 - 📤 Export ordered track list as clean text
 - 📦 **Export full album as ZIP** (all audio files + metadata + cover art) — advanced client-side feature using JSZip
 - 📊 Visible "Storage used" indicator (real-time estimate of IndexedDB + localStorage usage)
+- 🔊 Volume knob + mute in the bottom player (persisted across sessions)
 - 💾 Full persistence — audio + metadata survive refresh (uses IndexedDB + localStorage)
 - 🌓 Dark-first design with subtle gold accents and kintsugi glow
 - 📱 Fully responsive
