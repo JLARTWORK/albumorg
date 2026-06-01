@@ -1,1 +1,12 @@
-[CURRENT .gitignore]
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Local only
+*.log
+audio-backups/
