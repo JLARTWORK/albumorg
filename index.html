@@ -132,6 +132,32 @@
       border: none;
     }
 
+    /* Volume slider - matches player progress styling, slightly smaller */
+    #volume-slider {
+      height: 3px;
+      background: #2a3142;
+      border-radius: 9999px;
+      appearance: none;
+    }
+    #volume-slider::-webkit-slider-thumb {
+      appearance: none;
+      width: 10px;
+      height: 10px;
+      background: #c5a46e;
+      border-radius: 9999px;
+      cursor: pointer;
+      margin-top: -3.5px;
+      box-shadow: 0 0 0 2px rgba(197, 164, 110, 0.15);
+    }
+    #volume-slider::-moz-range-thumb {
+      width: 10px;
+      height: 10px;
+      background: #c5a46e;
+      border-radius: 9999px;
+      cursor: pointer;
+      border: none;
+    }
+
     .nav-active {
       background-color: #1f2535;
       color: #c5a46e;
@@ -426,7 +452,7 @@
             <label class="text-xs text-zinc-400 block mb-1.5">ALBUM TITLE</label>
             <input id="info-title" type="text" 
                    class="w-full bg-[#0f111a] border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#c5a46e]">
-          </div>
+            </div>
           <div>
             <label class="text-xs text-zinc-400 block mb-1.5">SUBTITLE / TAGLINE</label>
             <input id="info-subtitle" type="text" 
@@ -522,6 +548,18 @@
           <i class="fa-solid fa-stop mr-1"></i> Stop
         </button>
       </div>
+
+      <!-- Volume knob (simple range + mute icon, persisted) -->
+      <div class="flex items-center gap-1.5 flex-shrink-0 pl-2 border-l border-zinc-800">
+        <button onclick="toggleMute()" title="Toggle mute"
+                class="text-zinc-400 hover:text-white w-6 h-6 flex items-center justify-center transition-colors">
+          <i class="fa-solid fa-volume-high text-sm" id="volume-icon"></i>
+        </button>
+        <input type="range" id="volume-slider" 
+               class="w-16 accent-[#c5a46e] cursor-pointer" 
+               min="0" max="1" step="0.05" value="0.75"
+               oninput="setVolume(this.value)">
+      </div>
     </div>
   </div>
 
@@ -548,8 +586,14 @@
     let isGlobalPlaying = false;
     let currentAudioBlobUrl = null;   // Track the active blob URL so we can revoke it safely
 
+    // Volume state (persisted separately, survives refresh)
+    let volumeLevel = 0.75;
+    let previousVolume = 0.75;
+    let isMuted = false;
+
     const STORAGE_KEY = 'albumorg-v1';
     const ALBUM_INFO_KEY = 'albumorg-info-v1';
+    const VOLUME_KEY = 'albumorg-volume';
 
     // ---------------- Constants & Config ----------------
     // Track status options with completion weights
@@ -953,29 +997,6 @@
         const hasAudio = track.audioData || track.hasPersistedAudio;
         reuploadSection.classList.toggle('hidden', !!hasAudio);
       }
-
-      document.getElementById('edit-modal').classList.remove('hidden');
-      document.getElementById('edit-modal').classList.add('flex');
-    }
-
-    // Mood selection was replaced with free-text "mood" + "bpm" fields
-
-    function saveTrackEdits() {
-      const track = tracks.find(t => t.id === currentEditId);
-      if (!track) return;
-
-      track.title = document.getElementById('modal-title').value.trim();
-      track.notes = document.getElementById('modal-notes').value.trim();
-
-      // New fields
-      track.mood = document.getElementById('modal-mood').value.trim() || null;
-      const bpmValue = document.getElementById('modal-bpm').value.trim();
-      track.bpm = bpmValue ? parseInt(bpmValue, 10) : null;
-      track.status = document.getElementById('modal-status').value || 'idea';
-
-      saveData();
-      hideEditModal();
-      renderTracklist();
     }
 
     function hideEditModal() {
@@ -1061,6 +1082,9 @@
           updatePlayerPlayIcon();
         };
       }
+
+      // Apply persisted volume (only created once; subsequent tracks reuse element)
+      globalAudio.volume = isMuted ? 0 : volumeLevel;
 
       const url = URL.createObjectURL(audioBlob);
       currentAudioBlobUrl = url;
@@ -1199,6 +1223,74 @@
         icon.classList.remove('fa-pause');
         icon.classList.add('fa-play');
       }
+    }
+
+    // ---------------- Volume Controls (persisted) ----------------
+    function loadVolume() {
+      const saved = localStorage.getItem(VOLUME_KEY);
+      if (saved !== null) {
+        const v = parseFloat(saved);
+        if (!isNaN(v)) {
+          volumeLevel = Math.max(0, Math.min(1, v));
+          previousVolume = volumeLevel;
+        }
+      }
+    }
+
+    function saveVolume() {
+      try {
+        localStorage.setItem(VOLUME_KEY, volumeLevel.toString());
+      } catch (e) {}
+    }
+
+    function updateVolumeIcon(vol, muted) {
+      const icon = document.getElementById('volume-icon');
+      if (!icon) return;
+      icon.classList.remove('fa-volume-high', 'fa-volume-low', 'fa-volume-off', 'fa-volume-mute', 'fa-volume-up', 'fa-volume-down');
+      if (muted || vol <= 0) {
+        icon.classList.add('fa-volume-off');
+      } else if (vol < 0.33) {
+        icon.classList.add('fa-volume-low');
+      } else {
+        icon.classList.add('fa-volume-high');
+      }
+    }
+
+    function setVolume(val) {
+      volumeLevel = Math.max(0, Math.min(1, parseFloat(val) || 0));
+      isMuted = false;
+      if (globalAudio) {
+        globalAudio.volume = volumeLevel;
+      }
+      const slider = document.getElementById('volume-slider');
+      if (slider) slider.value = volumeLevel;
+      updateVolumeIcon(volumeLevel, false);
+      saveVolume();
+    }
+
+    function toggleMute() {
+      if (isMuted) {
+        isMuted = false;
+        volumeLevel = previousVolume || 0.75;
+        if (globalAudio) globalAudio.volume = volumeLevel;
+        const slider = document.getElementById('volume-slider');
+        if (slider) slider.value = volumeLevel;
+        updateVolumeIcon(volumeLevel, false);
+        saveVolume();
+      } else {
+        previousVolume = volumeLevel;
+        isMuted = true;
+        if (globalAudio) globalAudio.volume = 0;
+        updateVolumeIcon(0, true);
+      }
+    }
+
+    function initVolumeUI() {
+      const slider = document.getElementById('volume-slider');
+      if (slider) {
+        slider.value = volumeLevel;
+      }
+      updateVolumeIcon(volumeLevel, isMuted);
     }
 
     // Make track rows load into the persistent player
@@ -1623,9 +1715,11 @@
     async function init() {
       initTailwind();
       loadData();
+      loadVolume();          // restore persisted volume level before any playback
       renderTracklist();
       applyAlbumInfo();
       updateStorageUsed();
+      initVolumeUI();        // sync slider + icon with loaded value
 
       // Wait for IndexedDB so add-track can immediately persist audio
       await openAudioDB();
