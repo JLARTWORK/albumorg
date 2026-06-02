@@ -66,6 +66,23 @@
       background-color: #252c40;
     }
 
+    /* Drag handle improvements for mobile */
+    .drag-handle {
+      transition: color 0.1s ease, transform 0.1s ease;
+      padding: 4px;
+      margin: -4px;
+      border-radius: 6px;
+    }
+    .drag-handle:active {
+      transform: scale(0.95);
+      color: #c5a46e;
+    }
+    @media (hover: hover) {
+      .track-row:hover .drag-handle {
+        color: #6b7280;
+      }
+    }
+
     .cosmic-border {
       border-image: linear-gradient(to right, #2a3142, #c5a46e20, #2a3142) 1;
     }
@@ -166,6 +183,26 @@
 
     .subtle-glow {
       box-shadow: 0 0 15px -3px rgba(197, 164, 110, 0.1);
+    }
+
+    /* Mobile UX polish */
+    @media (max-width: 640px) {
+      .track-row {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+      }
+      
+      /* Larger tap targets on mobile */
+      .track-row button {
+        min-width: 36px;
+        min-height: 36px;
+      }
+    }
+
+    /* Better modal behavior on small screens */
+    .modal {
+      max-height: 92vh;
+      overflow-y: auto;
     }
   </style>
 </head>
@@ -285,14 +322,14 @@
           </div>
         </div>
 
-        <div class="mt-6 flex items-center gap-x-3">
+        <div class="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           <button onclick="enterPreviewMode()" 
-                  class="flex-1 md:flex-none flex items-center justify-center gap-x-2 bg-[#c5a46e] hover:bg-[#b38d55] transition-colors text-[#0f111a] font-semibold px-8 py-3 rounded-2xl">
+                  class="flex-1 flex items-center justify-center gap-x-2 bg-[#c5a46e] hover:bg-[#b38d55] active:bg-[#a07c48] transition-colors text-[#0f111a] font-semibold px-6 py-3.5 sm:py-3 rounded-2xl text-sm sm:text-base">
             <i class="fa-solid fa-play"></i>
             <span>Play Full Album</span>
           </button>
           <button onclick="showAddTrackModal()" 
-                  class="flex items-center justify-center gap-x-2 border border-zinc-700 hover:bg-zinc-900 transition-colors px-6 py-3 rounded-2xl text-sm">
+                  class="flex items-center justify-center gap-x-2 border border-zinc-700 hover:bg-zinc-900 active:bg-zinc-800 transition-colors px-5 py-3.5 sm:py-3 rounded-2xl text-sm">
             <i class="fa-solid fa-plus"></i>
             <span>Add Track</span>
           </button>
@@ -498,41 +535,40 @@
 
   <!-- Persistent Bottom Media Player -->
   <div id="bottom-player" 
-       class="hidden fixed bottom-0 left-0 right-0 bg-[#151a28] border-t border-zinc-700 z-[120] px-4 py-3">
-    <div class="max-w-6xl mx-auto flex items-center gap-4">
+       class="hidden fixed bottom-0 left-0 right-0 bg-[#151a28] border-t border-zinc-700 z-[120] px-3 sm:px-4 py-2 sm:py-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+    <div class="max-w-6xl mx-auto flex items-center gap-2 sm:gap-4">
       
-      <!-- Track Info -->
-      <div class="flex items-center gap-3 min-w-0 w-64">
-        <div onclick="editTrack(currentPlayingId)" class="w-11 h-11 rounded-xl overflow-hidden border border-zinc-600 cursor-pointer flex-shrink-0">
+      <!-- Track Info (more compact on mobile) -->
+      <div class="flex items-center gap-2 sm:gap-3 min-w-0 w-40 sm:w-56 md:w-64">
+        <div onclick="editTrack(currentPlayingId)" class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl overflow-hidden border border-zinc-600 cursor-pointer flex-shrink-0">
           <img id="player-artwork" src="https://picsum.photos/id/1015/100/100" class="w-full h-full object-cover">
         </div>
         <div class="min-w-0 flex-1">
-          <div id="player-title" class="font-medium text-sm truncate cursor-pointer" onclick="editTrack(currentPlayingId)">No track</div>
-          <div id="player-meta" class="text-[10px] text-[#c5a46e] flex items-center gap-x-2">
-            <span id="player-bpm"></span>
-            <span id="player-mood"></span>
-            <span id="player-status" class="text-zinc-400"></span>
+          <div id="player-title" class="font-medium text-xs sm:text-sm truncate cursor-pointer" onclick="editTrack(currentPlayingId)">No track</div>
+          <div id="player-meta" class="text-[9px] sm:text-[10px] text-[#c5a46e] flex items-center gap-x-1 sm:gap-x-2 overflow-hidden">
+            <span id="player-bpm" class="hidden sm:inline"></span>
+            <span id="player-mood" class="truncate"></span>
           </div>
         </div>
       </div>
 
       <!-- Controls -->
-      <div class="flex items-center gap-2 flex-shrink-0">
-        <button onclick="playPrevious()" class="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
+      <div class="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+        <button onclick="playPrevious()" class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
           <i class="fa-solid fa-step-backward"></i>
         </button>
         <button onclick="toggleGlobalPlayback()" id="player-play-btn"
-                class="w-10 h-10 flex items-center justify-center rounded-full bg-[#c5a46e] text-[#0f111a] hover:bg-[#b38d55] transition-colors">
+                class="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-[#c5a46e] text-[#0f111a] hover:bg-[#b38d55] transition-colors">
           <i class="fa-solid fa-play text-sm ml-0.5" id="player-play-icon"></i>
         </button>
-        <button onclick="playNext()" class="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
+        <button onclick="playNext()" class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
           <i class="fa-solid fa-step-forward"></i>
         </button>
       </div>
 
-      <!-- Progress -->
-      <div class="flex-1 flex items-center gap-3 min-w-0">
-        <div id="player-current-time" class="text-xs font-mono text-zinc-400 w-10 text-right">0:00</div>
+      <!-- Progress (takes remaining space) -->
+      <div class="flex-1 flex items-center gap-2 min-w-0">
+        <div id="player-current-time" class="hidden sm:block text-[10px] font-mono text-zinc-400 w-8 text-right">0:00</div>
         
         <div class="flex-1 relative">
           <input type="range" id="player-progress" 
@@ -544,24 +580,25 @@
                id="player-progress-fill" style="width: 0%"></div>
         </div>
         
-        <div id="player-duration" class="text-xs font-mono text-zinc-400 w-10">0:00</div>
+        <div id="player-duration" class="hidden sm:block text-[10px] font-mono text-zinc-400 w-8">0:00</div>
       </div>
 
-      <div class="flex items-center gap-2 flex-shrink-0">
+      <!-- Secondary actions (hide some on very small screens) -->
+      <div class="hidden md:flex items-center gap-2 flex-shrink-0">
         <button onclick="stopGlobalPlayback()" 
-                class="text-zinc-400 hover:text-red-400 px-3 py-1 text-xs rounded-xl hover:bg-zinc-800 transition-colors">
-          <i class="fa-solid fa-stop mr-1"></i> Stop
+                class="text-zinc-400 hover:text-red-400 px-2 py-1 text-xs rounded-xl hover:bg-zinc-800 transition-colors">
+          <i class="fa-solid fa-stop mr-1"></i> <span class="hidden lg:inline">Stop</span>
         </button>
       </div>
 
-      <!-- Volume knob (simple range + mute icon, persisted) -->
-      <div class="flex items-center gap-1.5 flex-shrink-0 pl-2 border-l border-zinc-800">
+      <!-- Volume (only on larger mobile / tablet) -->
+      <div class="hidden sm:flex items-center gap-1.5 flex-shrink-0 pl-2 border-l border-zinc-800">
         <button onclick="toggleMute()" title="Toggle mute"
-                class="text-zinc-400 hover:text-white w-6 h-6 flex items-center justify-center transition-colors">
-          <i class="fa-solid fa-volume-high text-sm" id="volume-icon"></i>
+                class="text-zinc-400 hover:text-white w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center transition-colors">
+          <i class="fa-solid fa-volume-high text-xs sm:text-sm" id="volume-icon"></i>
         </button>
         <input type="range" id="volume-slider" 
-               class="w-16 accent-[#c5a46e] cursor-pointer" 
+               class="w-12 sm:w-16 accent-[#c5a46e] cursor-pointer" 
                min="0" max="1" step="0.05" value="0.75"
                oninput="setVolume(this.value)">
       </div>
@@ -791,48 +828,54 @@
         : '';
 
       return `
-        <div class="track-row group flex items-center px-6 py-4 gap-4 cursor-pointer" 
+        <div class="track-row group flex items-center px-4 sm:px-6 py-3 sm:py-4 gap-3 sm:gap-4 cursor-pointer" 
              data-id="${track.id}" onclick="playTrack('${track.id}')">
           
+          <!-- Drag Handle (critical for mobile reordering) -->
+          <div class="drag-handle w-7 flex-shrink-0 flex items-center justify-center text-zinc-500 active:text-[#c5a46e] cursor-grab active:cursor-grabbing touch-none select-none"
+               onclick="event.stopImmediatePropagation()">
+            <i class="fa-solid fa-grip-lines text-base sm:text-sm"></i>
+          </div>
+
           <!-- Number -->
-          <div class="w-8 text-right font-mono text-lg text-zinc-400 select-none">${String(index + 1).padStart(2, '0')}</div>
+          <div class="w-7 text-right font-mono text-base sm:text-lg text-zinc-400 select-none">${String(index + 1).padStart(2, '0')}</div>
 
           <!-- Artwork -->
-          <div class="w-12 h-12 rounded-2xl overflow-hidden border border-zinc-600 flex-shrink-0">
+          <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl overflow-hidden border border-zinc-600 flex-shrink-0">
             <img src="${track.artwork || 'https://picsum.photos/id/1015/100/100'}" 
                  class="w-full h-full object-cover">
           </div>
 
           <!-- Info -->
           <div class="flex-1 min-w-0">
-            <div class="font-medium truncate">${track.title || 'Untitled Track'}</div>
+            <div class="font-medium text-sm sm:text-base truncate">${track.title || 'Untitled Track'}</div>
             ${metaLine}
           </div>
 
           <!-- BPM (prominent) + Status + Duration + Actions -->
-          <div class="flex items-center gap-2 flex-shrink-0">
+          <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 text-xs sm:text-sm">
             ${track.bpm ? `
-              <div class="px-2.5 py-1 text-xs font-semibold rounded-xl bg-[#c5a46e] text-[#0f111a] min-w-[42px] text-center">
+              <div class="px-2 py-0.5 text-[10px] sm:text-xs font-semibold rounded-lg bg-[#c5a46e] text-[#0f111a] min-w-[36px] sm:min-w-[42px] text-center">
                 ${track.bpm}
               </div>` : ''}
 
             ${track.status ? `
-              <div class="text-[9px] px-2 py-0.5 rounded-lg border border-zinc-600 text-zinc-400 whitespace-nowrap">
+              <div class="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-md border border-zinc-600 text-zinc-400 whitespace-nowrap">
                 ${STATUS_OPTIONS[track.status] ? STATUS_OPTIONS[track.status].label : track.status}
               </div>` : ''}
 
-            <div class="text-xs text-zinc-400 w-11 text-right font-mono">
+            <div class="text-[10px] sm:text-xs text-zinc-400 w-9 sm:w-11 text-right font-mono">
               ${track.duration || '—'}
             </div>
 
             <button onclick="event.stopImmediatePropagation(); playTrack('${track.id}')" 
-                    class="w-9 h-9 rounded-2xl ${(track.audioData || track.hasPersistedAudio) ? 'bg-zinc-700 hover:bg-[#c5a46e] hover:text-[#0f111a]' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'} flex items-center justify-center transition-colors">
+                    class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl ${(track.audioData || track.hasPersistedAudio) ? 'bg-zinc-700 hover:bg-[#c5a46e] hover:text-[#0f111a]' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'} flex items-center justify-center transition-colors">
               <i class="fa-solid fa-play text-xs ml-0.5"></i>
             </button>
 
             <button onclick="event.stopImmediatePropagation(); editTrack('${track.id}')" 
-                    class="w-9 h-9 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 flex items-center justify-center transition-colors text-xs">
-              <i class="fa-solid fa-edit"></i>
+                    class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 flex items-center justify-center transition-colors">
+              <i class="fa-solid fa-edit text-xs"></i>
             </button>
           </div>
         </div>
@@ -846,6 +889,7 @@
       new Sortable(el, {
         animation: 180,
         ghostClass: 'dragging',
+        handle: '.drag-handle',   // Only the grip allows dragging — much better on mobile
         onEnd: function(evt) {
           const newOrder = [];
           el.querySelectorAll('[data-id]').forEach((node, i) => {
