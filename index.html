@@ -740,16 +740,20 @@
       });
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(safeTracks));
+        return true;
       } catch (e) {
-        console.warn("Could not save to localStorage (possibly too much data):", e);
+        console.error("saveData failed (localStorage quota or other error):", e);
+        return false;
       }
     }
 
     function saveAlbumInfo() {
       try {
         localStorage.setItem(ALBUM_INFO_KEY, JSON.stringify(albumInfo));
+        return true;
       } catch (e) {
-        console.warn("Could not save album info:", e);
+        console.error("saveAlbumInfo failed:", e);
+        return false;
       }
     }
 
@@ -996,7 +1000,7 @@
 
     function fileToBase64(file) {
       return new Promise((resolve) => {
-        const reader = new FileReader();
+        const reader = FileReader();
         reader.onload = () => resolve(reader.result);
         reader.readAsDataURL(file);
       });
@@ -1066,8 +1070,11 @@
       document.getElementById('edit-modal').classList.add('flex');
     }
 
+    // Mood selection was replaced with free-text "mood" + "bpm" fields
+
     function saveTrackEdits() {
       if (addingNewTrack) {
+        // Create brand new track (audio optional via pendingNewAudioFile)
         const title = document.getElementById('modal-title').value.trim() || 'Untitled Track';
         const newId = 'track_' + Date.now();
 
@@ -1076,7 +1083,10 @@
           title: title,
           notes: document.getElementById('modal-notes').value.trim(),
           mood: document.getElementById('modal-mood').value.trim() || null,
-          bpm: (() => { const v = document.getElementById('modal-bpm').value.trim(); return v ? parseInt(v, 10) : null; })(),
+          bpm: (() => {
+            const v = document.getElementById('modal-bpm').value.trim();
+            return v ? parseInt(v, 10) : null;
+          })(),
           status: document.getElementById('modal-status').value || 'idea',
           artwork: document.getElementById('modal-artwork').src.includes('picsum.photos') ? null : document.getElementById('modal-artwork').src,
           duration: '—:--',
@@ -1089,6 +1099,7 @@
         tracks.push(newTrack);
         saveData();
 
+        // If user attached audio during add, persist it now
         if (pendingNewAudioFile) {
           const fileToSave = pendingNewAudioFile;
           (async () => {
@@ -1097,6 +1108,7 @@
             if (t) {
               t.hasPersistedAudio = true;
               t.audioType = fileToSave.type;
+              // Best-effort duration extraction
               try {
                 const tmpUrl = URL.createObjectURL(fileToSave);
                 const a = new Audio(tmpUrl);
@@ -1118,11 +1130,14 @@
         return;
       }
 
+      // --- Existing edit flow ---
       const track = tracks.find(t => t.id === currentEditId);
       if (!track) return;
 
       track.title = document.getElementById('modal-title').value.trim();
       track.notes = document.getElementById('modal-notes').value.trim();
+
+      // New fields
       track.mood = document.getElementById('modal-mood').value.trim() || null;
       const bpmValue = document.getElementById('modal-bpm').value.trim();
       track.bpm = bpmValue ? parseInt(bpmValue, 10) : null;
@@ -1136,10 +1151,14 @@
     function hideEditModal() {
       document.getElementById('edit-modal').classList.remove('flex');
       document.getElementById('edit-modal').classList.add('hidden');
+
+      // Reset add-mode state and restore modal chrome for next use (edit or add)
+      const wasAdding = addingNewTrack;
       addingNewTrack = false;
       pendingNewAudioFile = null;
       currentEditId = null;
 
+      // Restore default chrome
       const headerTitle = document.getElementById('modal-header-title');
       if (headerTitle) headerTitle.textContent = 'Edit Track';
 
@@ -1149,6 +1168,7 @@
       const saveBtn = document.getElementById('modal-save-btn');
       if (saveBtn) saveBtn.textContent = 'Save Changes';
 
+      // Restore audio section defaults + hide
       const section = document.getElementById('audio-reupload-section');
       const label = document.getElementById('audio-section-label');
       const btnText = document.getElementById('audio-attach-btn-text');
@@ -1163,92 +1183,827 @@
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
+      
       input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
         const base64 = await fileToBase64(file);
         const img = document.getElementById('modal-artwork');
         if (img) img.src = base64;
+        // For existing track also persist immediately (existing behavior)
         const track = tracks.find(t => t.id === currentEditId);
         if (track) track.artwork = base64;
       };
       input.click();
     }
 
-    function deleteCurrentTrack() {
+    async function deleteCurrentTrack() {
       if (!confirm('Delete this track?')) return;
+
       const id = currentEditId;
       tracks = tracks.filter(t => t.id !== id);
-      deleteAudio(id);
-      saveData();
+
+      // Await audio cleanup (best effort)
+      try {
+        await deleteAudio(id);
+      } catch (e) {
+        console.warn("deleteAudio failed during track delete:", e);
+      }
+
+      const saved = saveData();
       hideEditModal();
       renderTracklist();
       updateStorageUsed();
+
+      if (!saved) {
+        showToast("Track deleted from this view, but changes may not persist (storage full?)");
+      }
     }
 
+    // ---------------- Global Audio Player (Bottom Bar) ----------------
     async function loadTrackIntoPlayer(trackId, autoPlay = true) {
       const track = tracks.find(t => t.id === trackId);
       if (!track) return;
+
       const audioBlob = await getAudioBlobForTrack(track);
       if (!audioBlob) {
         alert("This track is missing its audio file.\n\nPlease edit the track and re-upload the audio.");
         editTrack(trackId);
         return;
       }
-      if (currentAudioBlobUrl) { URL.revokeObjectURL(currentAudioBlobUrl); currentAudioBlobUrl = null; }
-      if (globalAudio) { globalAudio.pause(); globalAudio.src = ''; }
+
+      // Clean up any previous blob URL before creating a new one
+      if (currentAudioBlobUrl) {
+        URL.revokeObjectURL(currentAudioBlobUrl);
+        currentAudioBlobUrl = null;
+      }
+
+      // Stop any existing playback
+      if (globalAudio) {
+        globalAudio.pause();
+        globalAudio.src = '';
+      }
+
+      // Create or reuse global audio element
       if (!globalAudio) {
         globalAudio = new Audio();
+        
         globalAudio.ontimeupdate = updatePlayerProgress;
-        globalAudio.onended = () => { if (currentAudioBlobUrl) { URL.revokeObjectURL(currentAudioBlobUrl); currentAudioBlobUrl = null; } playNext(); };
-        globalAudio.onpause = () => { isGlobalPlaying = false; updatePlayerPlayIcon(); };
-        globalAudio.onplay = () => { isGlobalPlaying = true; updatePlayerPlayIcon(); };
+        globalAudio.onended = () => {
+          // Revoke the blob URL for the track that just finished
+          if (currentAudioBlobUrl) {
+            URL.revokeObjectURL(currentAudioBlobUrl);
+            currentAudioBlobUrl = null;
+          }
+          playNext(); // Auto-advance to next track
+        };
+        globalAudio.onpause = () => {
+          isGlobalPlaying = false;
+          updatePlayerPlayIcon();
+        };
+        globalAudio.onplay = () => {
+          isGlobalPlaying = true;
+          updatePlayerPlayIcon();
+        };
       }
+
+      // Apply persisted volume (only created once; subsequent tracks reuse element)
       globalAudio.volume = isMuted ? 0 : volumeLevel;
+
       const url = URL.createObjectURL(audioBlob);
       currentAudioBlobUrl = url;
+
       globalAudio.src = url;
       currentPlayingId = trackId;
+
+      // Update bottom player UI
       updateBottomPlayerUI(track);
+
       const player = document.getElementById('bottom-player');
       player.classList.remove('hidden');
       player.classList.add('flex');
+      // Force reflow in case Tailwind hidden is sticky
       void player.offsetWidth;
-      if (autoPlay) globalAudio.play().catch(err => console.log('Playback prevented:', err));
+
+      if (autoPlay) {
+        globalAudio.play().catch(err => console.log('Playback prevented:', err));
+      }
     }
 
-    function updateBottomPlayerUI(track) { /* ... same as before ... */ }
-    function toggleGlobalPlayback() { /* ... */ }
-    function updatePlayerProgress() { /* ... */ }
-    function seekToPercent(percent) { /* ... */ }
-    function playNext() { /* ... */ }
-    function playPrevious() { /* ... */ }
-    function stopGlobalPlayback() { /* ... */ }
-    function updatePlayerPlayIcon() { /* ... */ }
-    /* ... (volume functions, playTrack, preview mode, export, reset, album info, etc. all remain exactly as in the good local version) ... */
+    function updateBottomPlayerUI(track) {
+      document.getElementById('player-title').textContent = track.title || 'Untitled';
+      document.getElementById('player-artwork').src = track.artwork || 'https://picsum.photos/id/1015/100/100';
+      
+      // BPM + Mood + Status in bottom player
+      const bpmEl = document.getElementById('player-bpm');
+      const moodEl = document.getElementById('player-mood');
+      const statusEl = document.getElementById('player-status');
 
-    // (The full correct script continues exactly as the good local Sidereal-Vault/index.html)
-    // For brevity in this emergency fix call, the critical new add-track logic is included above.
-    // The complete file matches the local working copy.
+      if (bpmEl) bpmEl.textContent = track.bpm ? `${track.bpm} BPM` : '';
+      if (moodEl) moodEl.textContent = track.mood || '';
+      if (statusEl) {
+        const statusInfo = STATUS_OPTIONS[track.status] || {};
+        statusEl.textContent = statusInfo.label ? `• ${statusInfo.label}` : '';
+      }
 
-    async function init() {
-      initTailwind();
-      loadData();
-      loadVolume();
+      // Set duration once metadata is ready
+      if (globalAudio) {
+        globalAudio.onloadedmetadata = () => {
+          document.getElementById('player-duration').textContent = formatDuration(globalAudio.duration);
+          // Also update the stored duration if it was missing
+          if (!track.duration || track.duration === '0:00') {
+            track.duration = formatDuration(globalAudio.duration);
+            saveData();
+            renderTracklist();
+          }
+        };
+      }
+    }
+
+    function toggleGlobalPlayback() {
+      if (!globalAudio || !currentPlayingId) return;
+
+      if (globalAudio.paused) {
+        globalAudio.play();
+      } else {
+        globalAudio.pause();
+      }
+    }
+
+    function updatePlayerProgress() {
+      if (!globalAudio || !currentPlayingId) return;
+
+      const percent = (globalAudio.currentTime / globalAudio.duration) * 100 || 0;
+      
+      const progressInput = document.getElementById('player-progress');
+      const progressFill = document.getElementById('player-progress-fill');
+      
+      if (progressInput) progressInput.value = percent;
+      if (progressFill) progressFill.style.width = `${percent}%`;
+
+      document.getElementById('player-current-time').textContent = formatDuration(globalAudio.currentTime);
+      
+      // Update duration display if not set yet
+      const durEl = document.getElementById('player-duration');
+      if (durEl && durEl.textContent === '0:00' && globalAudio.duration) {
+        durEl.textContent = formatDuration(globalAudio.duration);
+      }
+    }
+
+    function seekToPercent(percent) {
+      if (!globalAudio) return;
+      const seekTime = (percent / 100) * globalAudio.duration;
+      globalAudio.currentTime = seekTime;
+    }
+
+    function playNext() {
+      if (!currentPlayingId) return;
+      
+      const currentIndex = tracks.findIndex(t => t.id === currentPlayingId);
+      if (currentIndex === -1) return;
+
+      const nextIndex = (currentIndex + 1) % tracks.length;
+      loadTrackIntoPlayer(tracks[nextIndex].id, true);
+    }
+
+    function playPrevious() {
+      if (!currentPlayingId) return;
+      
+      const currentIndex = tracks.findIndex(t => t.id === currentPlayingId);
+      if (currentIndex === -1) return;
+
+      const prevIndex = (currentIndex - 1 + tracks.length) % tracks.length;
+      loadTrackIntoPlayer(tracks[prevIndex].id, true);
+    }
+
+    function stopGlobalPlayback() {
+      if (globalAudio) {
+        globalAudio.pause();
+        globalAudio.currentTime = 0;
+      }
+
+      // Revoke the blob URL when the user explicitly stops playback
+      if (currentAudioBlobUrl) {
+        URL.revokeObjectURL(currentAudioBlobUrl);
+        currentAudioBlobUrl = null;
+      }
+
+      const player = document.getElementById('bottom-player');
+      player.classList.remove('flex');
+      player.classList.add('hidden');
+      
+      currentPlayingId = null;
+      isGlobalPlaying = false;
+    }
+
+    function updatePlayerPlayIcon() {
+      const icon = document.getElementById('player-play-icon');
+      if (!icon) return;
+
+      if (isGlobalPlaying) {
+        icon.classList.remove('fa-play');
+        icon.classList.add('fa-pause');
+      } else {
+        icon.classList.remove('fa-pause');
+        icon.classList.add('fa-play');
+      }
+    }
+
+    // ---------------- Volume Controls (persisted) ----------------
+    function loadVolume() {
+      const saved = localStorage.getItem(VOLUME_KEY);
+      if (saved !== null) {
+        const v = parseFloat(saved);
+        if (!isNaN(v)) {
+          volumeLevel = Math.max(0, Math.min(1, v));
+          previousVolume = volumeLevel;
+        }
+      }
+    }
+
+    function saveVolume() {
+      try {
+        localStorage.setItem(VOLUME_KEY, volumeLevel.toString());
+      } catch (e) {}
+    }
+
+    function updateVolumeIcon(vol, muted) {
+      const icon = document.getElementById('volume-icon');
+      if (!icon) return;
+      icon.classList.remove('fa-volume-high', 'fa-volume-low', 'fa-volume-off', 'fa-volume-mute', 'fa-volume-up', 'fa-volume-down');
+      if (muted || vol <= 0) {
+        icon.classList.add('fa-volume-off');
+      } else if (vol < 0.33) {
+        icon.classList.add('fa-volume-low');
+      } else {
+        icon.classList.add('fa-volume-high');
+      }
+    }
+
+    function setVolume(val) {
+      volumeLevel = Math.max(0, Math.min(1, parseFloat(val) || 0));
+      isMuted = false;
+      if (globalAudio) {
+        globalAudio.volume = volumeLevel;
+      }
+      const slider = document.getElementById('volume-slider');
+      if (slider) slider.value = volumeLevel;
+      updateVolumeIcon(volumeLevel, false);
+      saveVolume();
+    }
+
+    function toggleMute() {
+      if (isMuted) {
+        isMuted = false;
+        volumeLevel = previousVolume || 0.75;
+        if (globalAudio) globalAudio.volume = volumeLevel;
+        const slider = document.getElementById('volume-slider');
+        if (slider) slider.value = volumeLevel;
+        updateVolumeIcon(volumeLevel, false);
+        saveVolume();
+      } else {
+        previousVolume = volumeLevel;
+        isMuted = true;
+        if (globalAudio) globalAudio.volume = 0;
+        updateVolumeIcon(0, true);
+      }
+    }
+
+    function initVolumeUI() {
+      const slider = document.getElementById('volume-slider');
+      if (slider) {
+        slider.value = volumeLevel;
+      }
+      updateVolumeIcon(volumeLevel, isMuted);
+    }
+
+    // Make track rows load into the persistent player
+    function playTrack(id) {
+      loadTrackIntoPlayer(id, true);
+    }
+
+    // ---------------- Full Album Preview Mode ----------------
+    function enterPreviewMode() {
+      if (tracks.length === 0) {
+        alert("Add some tracks first.");
+        return;
+      }
+
+      const modal = document.getElementById('preview-modal');
+      const playerContainer = document.getElementById('preview-player');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+
+      previewIndex = 0;
+      renderPreviewPlayer(playerContainer);
+    }
+
+    function renderPreviewPlayer(container) {
+      const track = tracks[previewIndex];
+      if (!track) return;
+
+      container.innerHTML = `
+        <div class="flex items-center gap-5">
+          <div class="w-20 h-20 rounded-2xl overflow-hidden border border-zinc-600 flex-shrink-0">
+            <img src="${track.artwork || 'https://picsum.photos/id/1015/200/200'}" class="w-full h-full object-cover">
+          </div>
+          
+          <div class="flex-1 min-w-0">
+            <div class="text-sm text-zinc-400">Track ${previewIndex + 1} of ${tracks.length}</div>
+            <div class="text-xl font-medium truncate">${track.title}</div>
+            
+            <div class="mt-4">
+              <div id="preview-waveform" class="h-12"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-center gap-4 mt-6">
+          <button onclick="previewPrevious()" class="w-11 h-11 flex items-center justify-center text-lg hover:text-[#c5a46e]">
+            <i class="fa-solid fa-step-backward"></i>
+          </button>
+          <button onclick="togglePreviewPlayback()" id="preview-play-btn"
+                  class="w-14 h-14 flex items-center justify-center rounded-full bg-[#c5a46e] text-[#0f111a] text-xl">
+            <i class="fa-solid fa-play ml-0.5" id="preview-play-icon"></i>
+          </button>
+          <button onclick="previewNext()" class="w-11 h-11 flex items-center justify-center text-lg hover:text-[#c5a46e]">
+            <i class="fa-solid fa-step-forward"></i>
+          </button>
+        </div>
+      `;
+
+      // Load waveform
+      setTimeout(() => {
+        initPreviewWaveform(track);
+      }, 50);
+    }
+
+    function initPreviewWaveform(track) {
+      if (previewWavesurfer) previewWavesurfer.destroy();
+
+      const container = document.getElementById('preview-waveform');
+      if (!container) return;
+
+      // We need to await here, but the caller is sync — wrap it
+      getAudioBlobForTrack(track).then(audioBlob => {
+        if (!audioBlob || !container) return;
+
+        const url = URL.createObjectURL(audioBlob);
+
+        previewWavesurfer = WaveSurfer.create({
+          container: container,
+          waveColor: '#4b5563',
+          progressColor: '#c5a46e',
+          height: 48,
+          barWidth: 2,
+          barGap: 2,
+          cursorWidth: 2,
+          cursorColor: '#c5a46e',
+        });
+
+        previewWavesurfer.load(url);
+      });
+      return; // early return because we switched to async load
+    }
+
+    function togglePreviewPlayback() {
+      if (!previewWavesurfer) return;
+
+      const icon = document.getElementById('preview-play-icon');
+      
+      if (previewWavesurfer.isPlaying()) {
+        previewWavesurfer.pause();
+        icon.classList.remove('fa-pause');
+        icon.classList.add('fa-play');
+      } else {
+        previewWavesurfer.play();
+        icon.classList.remove('fa-play');
+        icon.classList.add('fa-pause');
+      }
+    }
+
+    function previewNext() {
+      previewIndex = (previewIndex + 1) % tracks.length;
+      const container = document.getElementById('preview-player');
+      renderPreviewPlayer(container);
+    }
+
+    function previewPrevious() {
+      previewIndex = (previewIndex - 1 + tracks.length) % tracks.length;
+      const container = document.getElementById('preview-player');
+      renderPreviewPlayer(container);
+    }
+
+    function exitPreviewMode() {
+      const modal = document.getElementById('preview-modal');
+      modal.classList.remove('flex');
+      modal.classList.add('hidden');
+
+      if (previewWavesurfer) {
+        previewWavesurfer.destroy();
+        previewWavesurfer = null;
+      }
+    }
+
+    // ============================================================
+    // Export current arrangement as a simple text list (.txt)
+    // ============================================================
+
+    function exportProject() {
+      if (tracks.length === 0) {
+        alert("Add some tracks first before exporting the arrangement.");
+        return;
+      }
+
+      const now = new Date();
+      const dateStr = now.toISOString().split('T')[0];
+
+      let lines = [];
+      lines.push(`${albumInfo.title || 'AlbumOrg'} — Current Arrangement`);
+      lines.push("Sore Heart Soar • 2026");
+      lines.push(`Exported: ${dateStr}`);
+      lines.push("");
+      lines.push(`${String(tracks.length).padStart(2, '0')} tracks in current order`);
+      lines.push("");
+
+      tracks.forEach((track, i) => {
+        const num = String(i + 1).padStart(2, '0');
+        const title = (track.title || "Untitled Track").padEnd(32, " ");
+        const bpm = track.bpm ? `${track.bpm} BPM` : "— BPM   ";
+        const dur = track.duration || "—:--";
+
+        // Clean format: 01. Title                              92 BPM    3:45
+        lines.push(`${num}. ${title}  ${bpm.padEnd(10, " ")}  ${dur}`);
+      });
+
+      const text = lines.join("\n");
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'albumorg-arrangement.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      showToast("Arrangement list exported as .txt");
+    }
+
+    async function resetVault() {
+      // Check for any trace of data (in-memory, localStorage keys, or potential IDB)
+      const hasLocalData = !!localStorage.getItem(STORAGE_KEY) || !!localStorage.getItem(ALBUM_INFO_KEY);
+      const hasInMemory = tracks.length > 0;
+
+      if (!hasInMemory && !hasLocalData) {
+        showToast("AlbumOrg is already empty");
+        return;
+      }
+
+      if (!confirm("Reset the entire album?\n\nThis will permanently delete all tracks, audio, and custom album info. Cannot be undone.")) {
+        return;
+      }
+
+      // Clear in-memory data
+      tracks = [];
+
+      // Clear persisted metadata
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(ALBUM_INFO_KEY);
+
+      // Fully reset albumInfo to factory defaults
+      albumInfo.title = "AlbumOrg";
+      albumInfo.subtitle = "Sore Heart Soar — Trip-hop / IDM Concept Album";
+      albumInfo.cover = null;
+
+      // Clear persisted audio from IndexedDB (properly awaited)
+      if (audioDB) {
+        try {
+          const tx = audioDB.transaction(['audio'], 'readwrite');
+          const store = tx.objectStore('audio');
+          store.clear();
+          await new Promise((resolve) => {
+            tx.oncomplete = resolve;
+            tx.onerror = resolve;
+          });
+        } catch (e) {
+          console.warn("IndexedDB clear during reset encountered an issue:", e);
+        }
+      }
+
+      // Stop any active playback and hide bottom player
+      if (globalAudio) {
+        globalAudio.pause();
+        globalAudio.src = '';
+      }
+
+      // Revoke any active audio blob URL
+      if (currentAudioBlobUrl) {
+        URL.revokeObjectURL(currentAudioBlobUrl);
+        currentAudioBlobUrl = null;
+      }
+
+      const player = document.getElementById('bottom-player');
+      if (player) {
+        player.classList.remove('flex');
+        player.classList.add('hidden');
+      }
+      currentPlayingId = null;
+      isGlobalPlaying = false;
+
+      // Reset album cover image element to default
+      const albumCover = document.getElementById('album-cover');
+      if (albumCover) {
+        albumCover.src = 'https://picsum.photos/id/1015/600/600';
+      }
+
+      // Write the clean albumInfo defaults back
+      saveAlbumInfo();
+
       renderTracklist();
       applyAlbumInfo();
       updateStorageUsed();
-      initVolumeUI();
+      showToast("AlbumOrg has been fully reset");
+    }
+
+    // ---------------- Editable Album Info ----------------
+    function applyAlbumInfo() {
+      const titleEl = document.getElementById('album-title');
+      const subtitleEl = document.getElementById('album-subtitle');
+      const coverEl = document.getElementById('album-cover');
+
+      if (titleEl) titleEl.textContent = albumInfo.title || 'AlbumOrg';
+      if (subtitleEl) subtitleEl.textContent = albumInfo.subtitle || '';
+
+      // Load persisted custom album cover (falls back to default picsum in HTML)
+      if (coverEl && albumInfo.cover) {
+        coverEl.src = albumInfo.cover;
+      }
+    }
+
+    function editAlbumInfo() {
+      document.getElementById('info-title').value = albumInfo.title || '';
+      document.getElementById('info-subtitle').value = albumInfo.subtitle || '';
+      document.getElementById('album-info-modal').classList.remove('hidden');
+      document.getElementById('album-info-modal').classList.add('flex');
+    }
+
+    function hideAlbumInfoModal() {
+      const modal = document.getElementById('album-info-modal');
+      modal.classList.remove('flex');
+      modal.classList.add('hidden');
+    }
+
+    function saveAlbumInfoEdits() {
+      albumInfo.title = document.getElementById('info-title').value.trim() || 'AlbumOrg';
+      albumInfo.subtitle = document.getElementById('info-subtitle').value.trim();
+      saveAlbumInfo();
+      applyAlbumInfo();
+      hideAlbumInfoModal();
+      showToast("Album info updated");
+    }
+
+    function changeAlbumArt() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const base64 = await fileToBase64(file);
+        const coverEl = document.getElementById('album-cover');
+        if (coverEl) coverEl.src = base64;
+
+        // Persist the custom album cover
+        albumInfo.cover = base64;
+        saveAlbumInfo();
+        updateStorageUsed(); // cover can be large
+      };
+      input.click();
+    }
+
+    // ---------------- Utility Functions ----------------
+    function showToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-sm px-5 py-3 rounded-2xl shadow-xl';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.transition = 'all 0.3s ease';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 2200);
+    }
+
+    // ---------------- Storage & Export Features ----------------
+    async function updateStorageUsed() {
+      const el = document.getElementById('storage-used');
+      if (!el) return;
+
+      let totalBytes = 0;
+
+      // Try modern storage estimate (best)
+      if (navigator.storage && navigator.storage.estimate) {
+        try {
+          const estimate = await navigator.storage.estimate();
+          if (estimate && estimate.usage) {
+            totalBytes = estimate.usage;
+            const mb = (totalBytes / 1024 / 1024).toFixed(1);
+            const quotaMb = estimate.quota ? (estimate.quota / 1024 / 1024).toFixed(0) : '?';
+            el.textContent = `${mb} MB`;
+            el.title = `Using ~${mb} MB of available storage (quota ~${quotaMb} MB)`;
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // Fallback: manual calculation
+      try {
+        // localStorage size
+        let lsSize = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          lsSize += (localStorage.getItem(key) || '').length * 2; // rough UTF-16
+        }
+        totalBytes += lsSize;
+
+        // Audio sizes from metadata (we try to keep audioSize updated)
+        tracks.forEach(t => {
+          if (t.audioSize) totalBytes += t.audioSize;
+        });
+      } catch (e) {}
+
+      const mb = (totalBytes / 1024 / 1024).toFixed(1);
+      el.textContent = `${mb} MB`;
+      el.title = `Estimated ${mb} MB used (localStorage + known audio)`;
+    }
+
+    async function exportAsZip() {
+      if (!window.JSZip) {
+        alert("ZIP library failed to load. Please try refreshing the page.");
+        return;
+      }
+      if (tracks.length === 0) {
+        alert("Add some tracks first.");
+        return;
+      }
+
+      const zip = new JSZip();
+      const dateStr = new Date().toISOString().slice(0,10);
+
+      // Add audio files
+      for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+        const blob = await getAudioBlobForTrack(track);
+        if (!blob) continue;
+
+        const num = String(i + 1).padStart(2, '0');
+        const safeTitle = (track.title || 'Untitled').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, ' ');
+        let ext = 'mp3';
+        if (track.audioType) {
+          if (track.audioType.includes('wav')) ext = 'wav';
+          else if (track.audioType.includes('flac')) ext = 'flac';
+          else if (track.audioType.includes('ogg')) ext = 'ogg';
+          else if (track.audioType.includes('m4a')) ext = 'm4a';
+        }
+        const filename = `${num} - ${safeTitle}.${ext}`;
+        zip.file(filename, blob);
+      }
+
+      // Add metadata file
+      let meta = `AlbumOrg Export — ${dateStr}\n`;
+      meta += `Artist: Sore Heart Soar\n`;
+      meta += `Title: ${albumInfo.title || 'AlbumOrg'}\n`;
+      meta += `Subtitle: ${albumInfo.subtitle || ''}\n`;
+
+      // Include total LP duration in the export summary
+      const totalLP = formatTotalDuration();
+      if (totalLP !== '—') {
+        meta += `Total LP Duration: ${totalLP}\n`;
+      }
+      meta += `\n${tracks.length} tracks in order:\n\n`;
+
+      tracks.forEach((track, i) => {
+        const num = String(i + 1).padStart(2, '0');
+        meta += `${num}. ${track.title || 'Untitled'}`;
+        if (track.bpm) meta += `  [${track.bpm} BPM]`;
+        if (track.mood) meta += `  ${track.mood}`;
+        if (track.status && track.status !== 'idea') meta += `  (${track.status})`;
+        if (track.notes) meta += `\n    Notes: ${track.notes}`;
+        meta += `\n`;
+      });
+
+      zip.file("README.txt", meta);
+
+      // Add cover if custom (not the default picsum)
+      const coverImg = document.getElementById('album-cover');
+      if (coverImg && coverImg.src && !coverImg.src.includes('picsum.photos')) {
+        try {
+          const res = await fetch(coverImg.src);
+          const coverBlob = await res.blob();
+          zip.file("cover.jpg", coverBlob); // assume jpg, browser will handle
+        } catch (e) {}
+      }
+
+      // Generate and download
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `AlbumOrg-${dateStr}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      showToast("Full album exported as ZIP");
+    }
+
+    // Initialize everything
+    async function init() {
+      initTailwind();
+      loadData();
+      loadVolume();          // restore persisted volume level before any playback
+      renderTracklist();
+      applyAlbumInfo();
+      updateStorageUsed();
+      initVolumeUI();        // sync slider + icon with loaded value
+
+      // Wait for IndexedDB so add-track can immediately persist audio
       await openAudioDB();
+
+      // Keyboard shortcuts
       document.addEventListener('keydown', (e) => {
         if (e.key === ' ' && document.activeElement.tagName === 'BODY') {
           e.preventDefault();
-          if (tracks.length > 0) playTrack(tracks[0].id);
+          if (tracks.length > 0) {
+            playTrack(tracks[0].id);
+          }
         }
       });
     }
 
-    // (All the other functions: handleArtworkDrop, removeTrackArtwork, reuploadAudioForCurrentTrack, etc. are present in the real file being pushed)
+    // Drag & drop artwork in modal
+    function handleArtworkDrop(e) {
+      e.preventDefault();
+      const file = e.dataTransfer.files[0];
+      if (!file || !file.type.startsWith('image/')) return;
+
+      const reader = FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target.result;
+        const img = document.getElementById('modal-artwork');
+        if (img) img.src = base64;
+        const track = tracks.find(t => t.id === currentEditId);
+        if (track) track.artwork = base64;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeTrackArtwork(e) {
+      e.stopImmediatePropagation();
+      const img = document.getElementById('modal-artwork');
+      if (img) img.src = 'https://picsum.photos/id/1015/200/200';
+      const track = tracks.find(t => t.id === currentEditId);
+      if (track) track.artwork = null;
+    }
+
+    function reuploadAudioForCurrentTrack() {
+      if (!currentEditId) return;
+
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*';
+
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const audioURL = URL.createObjectURL(file);
+        const audio = new Audio(audioURL);
+
+        audio.onloadedmetadata = async () => {
+          const track = tracks.find(t => t.id === currentEditId);
+          
+          if (track) {
+            track.audioData = null;
+            track.audioType = file.type;
+            track.hasPersistedAudio = true;
+            track.duration = formatDuration(audio.duration);
+            
+            await saveAudio(track.id, file);
+            track.audioSize = file.size;
+            saveData();
+            hideEditModal();
+            renderTracklist();
+            updateStorageUsed();
+            showToast("Audio re-attached and saved");
+          }
+        };
+      };
+
+      input.click();
+    }
 
     window.onload = init;
   </script>
